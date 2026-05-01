@@ -2,11 +2,14 @@ import math
 from xml.parsers.expat import model
 
 from networks import flexresnet, flexvgg, flexvit, vit, flexdeit_v3
+from networks.flexgpt import FlexGPT, FlexGPTConfig
 from training import *
+from training import FlexLMTrainer
 from networks.vit import ViTPrebuilt
 
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR, ReduceLROnPlateau
 from functools import partial
+import torch
 import torch.optim as optim
 from torchvision.datasets import CIFAR10, CIFAR100
 import distillation.training
@@ -95,6 +98,32 @@ class VitTrainingImagenetWarmup(FlexTrainingContext):
             CosineAnnealingLR(optimizer, T_max=self.epochs -
                               self.warmup_epochs, eta_min=0.0)
         ], milestones=[self.warmup_epochs])
+
+
+class GPTTrainingContext(FlexTrainingContext):
+    warmup_epochs: int = 10
+    num_levels_per_step: int = None  # None = train all levels; set e.g. 2 to sample
+
+    def __init__(self, dataset_name="wikitext-103-raw-v1",
+                 max_seq_length=1024, batch_size=8,
+                 num_levels_per_step=None,
+                 patience=5, epochs=20,
+                 *args, **kwargs):
+        loader = partial(utils.load_wikitext, dataset_name=dataset_name,
+                         max_seq_length=max_seq_length, batch_size=batch_size)
+        super().__init__(loader, patience=patience, epochs=epochs, *args, **kwargs)
+        self.num_levels_per_step = num_levels_per_step
+
+    def make_optimizer(self, model):
+        return optim.AdamW(model.parameters(), lr=3e-4, weight_decay=0.1)
+
+    def make_scheduler(self, optimizer):
+        warmup = LinearLR(optimizer, start_factor=0.1, total_iters=self.warmup_epochs)
+        cosine = CosineAnnealingLR(optimizer, T_max=self.epochs - self.warmup_epochs, eta_min=1e-5)
+        return SequentialLR(optimizer, schedulers=[warmup, cosine], milestones=[self.warmup_epochs])
+
+
+torch.serialization.add_safe_globals([GPTTrainingContext])
 
 
 CONFIGS = {
@@ -358,7 +387,53 @@ CONFIGS = {
             mixup_fn=utils.mixup_fn,
             patience=20, epochs=100,
             label_smoothing=0.11, gradient_clip_val=1.0)
-    ), 'flexdeit_v3_lowFLOPS': TrainerBuilder(
+    ), 'flexgpt': {
+        'wikitext103.3levels': TrainerBuilder(
+            FlexLMTrainer,
+            FlexGPTConfig(
+                vocab_size=50257,
+                max_seq_length=1024,
+                num_layers=12,
+                hidden_dims=(384, 512, 768),
+                num_heads=(6, 8, 12),
+                mlp_dims=(1536, 2048, 3072),
+                dropout=0.1,
+            ),
+            GPTTrainingContext(),
+        ),
+        'wikitext2.3levels': TrainerBuilder(
+            FlexLMTrainer,
+            FlexGPTConfig(
+                vocab_size=50257,
+                max_seq_length=1024,
+                num_layers=12,
+                hidden_dims=(384, 512, 768),
+                num_heads=(6, 8, 12),
+                mlp_dims=(1536, 2048, 3072),
+                dropout=0.1,
+            ),
+            GPTTrainingContext(dataset_name="wikitext-2-raw-v1"),
+        ),
+        'wikitext2.tiny': TrainerBuilder(
+            FlexLMTrainer,
+            FlexGPTConfig(
+                vocab_size=50257,
+                max_seq_length=256,
+                num_layers=2,
+                hidden_dims=(192, 256, 384),
+                num_heads=(3, 4, 6),
+                mlp_dims=(768, 1024, 1536),
+                dropout=0.1,
+            ),
+            GPTTrainingContext(
+                dataset_name="wikitext-2-raw-v1",
+                max_seq_length=256,
+                batch_size=4,
+                epochs=5,
+                wandb_project_name=None,
+            ),
+        ),
+    }, 'flexdeit_v3_lowFLOPS': TrainerBuilder(
         distillation.training.ScalaDistillTrainer,
         flexdeit_v3.ViTConfig_v3(
             num_classes=1000,

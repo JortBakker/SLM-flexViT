@@ -1,5 +1,6 @@
 from flex_modules.conv2d import *
 from flex_modules.batchnorm2d import *
+from flex_modules.embedding import *
 from flex_modules.class_token import *
 from flex_modules.flexselect import *
 from flex_modules.layer_norm import *

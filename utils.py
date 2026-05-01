@@ -92,6 +92,9 @@ class SelfDescripting:
         return res
 
 
+torch.serialization.add_safe_globals([SelfDescripting])
+
+
 def evaluate_model(model: nn.Module, dataloader: DataLoader, device: str) -> torch.Tensor:
     """
     Evaluates the model on the given dataloader and returns accuracy and F1 score.
@@ -291,6 +294,71 @@ def load_data(dataset, data_dir=paths.DATA_PATH, tmp_dir=paths.TMPDIR, resize=No
         test_dataset, batch_size=batch_size, num_workers=8)
 
     return train_dataloader, val_dataloader, test_dataloader
+
+
+def load_wikitext(
+    dataset_name: str = "wikitext-103-raw-v1",
+    max_seq_length: int = 1024,
+    batch_size: int = 8,
+    num_workers: int = 4,
+    cache_dir: str = None,
+) -> tuple[DataLoader, DataLoader, DataLoader]:
+    """
+    Downloads (or loads from cache) a WikiText dataset, tokenises with the GPT-2
+    tokeniser, packs sequences to max_seq_length with no padding, and returns
+    (train_loader, val_loader, test_loader).
+
+    Each batch is a tuple (input_ids, input_ids) of shape [B, max_seq_length].
+    Labels are the same as inputs; the loss function shifts them by one position.
+
+    Args:
+        dataset_name: HuggingFace dataset config, e.g. "wikitext-103-raw-v1"
+                      or "wikitext-2-raw-v1" for a smaller version.
+        max_seq_length: Number of tokens per training example.
+        batch_size: Examples per batch.
+        num_workers: DataLoader worker processes.
+        cache_dir: Optional path to override the default HuggingFace cache.
+    """
+    from datasets import load_dataset
+    from transformers import AutoTokenizer
+    from torch.utils.data import Dataset as TorchDataset
+
+    tokenizer = AutoTokenizer.from_pretrained("gpt2", cache_dir=cache_dir)
+    raw = load_dataset("wikitext", dataset_name, cache_dir=cache_dir)
+
+    def tokenize(examples):
+        return tokenizer(examples["text"])
+
+    tokenized = raw.map(
+        tokenize,
+        batched=True,
+        remove_columns=["text"],
+    )
+
+    def pack(examples):
+        # Flatten all token sequences in the batch into one list, then rechunk.
+        ids = sum(examples["input_ids"], [])
+        total = (len(ids) // max_seq_length) * max_seq_length
+        chunks = [ids[i: i + max_seq_length] for i in range(0, total, max_seq_length)]
+        return {"input_ids": chunks}
+
+    packed = tokenized.map(pack, batched=True, remove_columns=["attention_mask"])
+    packed.set_format(type="torch", columns=["input_ids"])
+
+    def collate(batch):
+        ids = torch.stack([b["input_ids"] for b in batch])  # [B, S]
+        return ids, ids  # (input_ids, labels) — loss shifts internally
+
+    def make_loader(split: str, shuffle: bool) -> DataLoader:
+        return DataLoader(
+            packed[split],
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=num_workers,
+            collate_fn=collate,
+        )
+
+    return make_loader("train", True), make_loader("validation", False), make_loader("test", False)
 
 
 def flexible_model_copy(src: Union[nn.Module, dict[str, Any]], dest: nn.Module):

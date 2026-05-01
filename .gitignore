@@ -10,3 +10,5 @@ run_eval.sh
 run_job.sh
 run_imagenet.sh
 .*
+myenv
+plans

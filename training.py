@@ -211,6 +211,69 @@ class FlexModelTrainer(pl.LightningModule, BaseTrainer):
         return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "monitor": "val_loss"}}
 
 
+class FlexLMTrainer(FlexModelTrainer):
+    """
+    Adds:
+      - Optional level sampling (train a random subset of levels per batch)
+      - CLM cross-entropy loss
+      - Perplexity as metric
+    All other features (optimizer, scheduler, load_from, checkpointing) are
+    inherited from FlexModelTrainer.
+    """
+
+    def _step(self, batch: tuple[torch.Tensor, torch.Tensor], stage: str) -> None:
+        input_ids, _ = batch  # both tensors are identical; labels are derived by shifting
+
+        if stage == "train":
+            opt = self.optimizers()
+            opt.zero_grad()
+
+        # Choose which levels to train this step
+        all_levels = list(range(self.submodel.max_level() + 1))
+        num_sample = getattr(self.training_context, "num_levels_per_step", None)
+        if stage == "train" and num_sample is not None:
+            import random
+            levels = random.sample(all_levels, k=min(num_sample, len(all_levels)))
+        else:
+            levels = all_levels
+
+        total_loss = 0.0
+        vocab_size = self.submodel.config.vocab_size
+
+        for i in levels:
+            self.submodel.set_level_use(i)
+            logits = self(input_ids)  # [B, S, vocab_size]
+
+            # CLM loss: predict token t+1 from token t at every position
+            loss = F.cross_entropy(
+                logits[:, :-1].reshape(-1, vocab_size),  # [B*(S-1), vocab_size]
+                input_ids[:, 1:].reshape(-1),            # [B*(S-1)]
+            )
+            ppl = torch.exp(loss.detach())
+
+            self.log(f"{stage}_level{i}_loss", loss,
+                     prog_bar=False, sync_dist=True)
+            self.log(f"{stage}_level{i}_ppl",  ppl,
+                     prog_bar=(stage != "train"), sync_dist=True)
+
+            if stage == "train":
+                self.manual_backward(loss)
+            total_loss += loss.clone().detach()
+
+        self.log(f"{stage}_loss", total_loss,
+                 prog_bar=(stage != "train"), sync_dist=True)
+
+        if stage == "train":
+            opt.step()
+
+
+import functools
+torch.serialization.add_safe_globals([
+    TrainingContext, FlexTrainingContext, FlexModelTrainer, FlexLMTrainer,
+    functools.partial, utils.load_wikitext, utils.load_data, utils.load_imagenet,
+    utils.load_dummy_data])
+
+
 class SimpleTrainer(pl.LightningModule, BaseTrainer):
     def __init__(self, model_config: ModelConfig, training_context: TrainingContext) -> None:
         super().__init__()
