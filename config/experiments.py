@@ -399,7 +399,7 @@ CONFIGS = {
                 mlp_dims=(1536, 2048, 3072),
                 dropout=0.1,
             ),
-            GPTTrainingContext(),
+            GPTTrainingContext(wandb_project_name="FlexGPT_wikitext103"),
         ),
         'wikitext2.3levels': TrainerBuilder(
             FlexLMTrainer,
