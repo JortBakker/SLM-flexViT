@@ -21,10 +21,9 @@ echo "Node name: $(hostname)"
 echo -n memory=; ulimit -m
 echo -n nproc=; nproc
 
-source "$HOME/FlexViT/myenv/bin/activate"
+source "$HOME/myenv/bin/activate"
 
-mkdir -p "$HOME/FlexViT/logs"
-cd "$HOME/FlexViT"
+mkdir -p "$HOME/logs"
 
 srun python3 run_experiment.py run flexgpt,wikitext2.tiny
 
