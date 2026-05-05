@@ -399,7 +399,8 @@ def finetune(model: pl.LightningModule, config: TrainingContext, conf_descriptio
             config=model_config.get_flat_dict(),
             save_dir=paths.LOG_PATH,
             dir=paths.LOG_PATH,
-            log_model=False)
+            log_model=False,
+            offline=True)
         kwargs['logger'] = logger
     else:
         kwargs['logger'] = False

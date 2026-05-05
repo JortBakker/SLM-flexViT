@@ -430,7 +430,7 @@ CONFIGS = {
                 max_seq_length=256,
                 batch_size=4,
                 epochs=5,
-                wandb_project_name=None,
+                wandb_project_name="FlexGPT",
             ),
         ),
     }, 'flexdeit_v3_lowFLOPS': TrainerBuilder(

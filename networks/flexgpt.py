@@ -31,8 +31,7 @@ class FlexGPTConfig(FlexModelConfig):
     def no_prebuilt(self) -> 'FlexGPTConfig':
         return self
 
-    def create_base_config(self, level) -> ModelConfig:
-        raise NotImplementedError("Base GPT config not yet implemented")
+    # def create_base_config(self, level) -> ModelConfig:
 
     def max_level(self) -> int:
         return len(self.hidden_dims) - 1
