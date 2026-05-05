@@ -13,6 +13,8 @@ module load 2023
 module load Python/3.11.3-GCCcore-12.3.0
 module load CUDA/12.1.1
 
+mkdir -p ./jobs
+
 nvidia-smi
 
 echo "Snellius Job Started"
