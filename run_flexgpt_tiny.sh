@@ -13,9 +13,20 @@ module load 2023
 module load Python/3.11.3-GCCcore-12.3.0
 module load CUDA/12.1.1
 
-source "$HOME/FlexViT/venv/bin/activate"
+nvidia-smi
+
+echo "Snellius Job Started"
+echo | date
+echo "Node name: $(hostname)"
+echo -n memory=; ulimit -m
+echo -n nproc=; nproc
+
+source "$HOME/FlexViT/myenv/bin/activate"
 
 mkdir -p "$HOME/FlexViT/logs"
 cd "$HOME/FlexViT"
 
 srun python3 run_experiment.py run flexgpt,wikitext2.tiny
+
+echo "Job Complete"
+echo | date
