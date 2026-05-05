@@ -23,9 +23,9 @@ echo "Node name: $(hostname)"
 echo -n memory=; ulimit -m
 echo -n nproc=; nproc
 
-source "$HOME/myenv/bin/activate"
+source "/myenv/bin/activate"
 
-mkdir -p "$HOME/logs"
+mkdir -p "/logs"
 
 srun python3 run_experiment.py run flexgpt,wikitext2.tiny
 
