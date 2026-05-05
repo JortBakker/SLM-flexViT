@@ -30,8 +30,8 @@ JOBDIR = make_path(f"{PROJECT_DIR}/wandb/job_{SLURM_JOBID}")
 DATA_PATH = make_path(f"{PROJECT_DIR}/data")
 LOG_PATH = make_path(JOBDIR / 'logs')
 
-TRAINED_MODELS = make_path("/ivi/zfs/s0/original_homes/skalra/Saved Models" if ON_CLUSTER else PROJECT_DIR / 'pretrained')
-CHECKPOINT_PATH = make_path("/ivi/xfs/skalra/checkpoints" if ON_CLUSTER else PROJECT_DIR / 'checkpoints')
+TRAINED_MODELS = make_path(f"{HOME}/FlexViT/saved_models" if ON_CLUSTER else PROJECT_DIR / 'pretrained')
+CHECKPOINT_PATH = make_path(f"{HOME}/FlexViT/checkpoints" if ON_CLUSTER else PROJECT_DIR / 'checkpoints')
 
 FIGURES = make_path(PROJECT_DIR / 'figures')
 
