@@ -23,7 +23,7 @@ echo "Node name: $(hostname)"
 echo -n memory=; ulimit -m
 echo -n nproc=; nproc
 
-source "/myenv/bin/activate"
+source "$HOME/FlexViT/myenv/bin/activate"
 
 mkdir -p "/logs"
 
