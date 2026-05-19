@@ -406,3 +406,82 @@ def load_model(exp_name, model_config):
         sdict = torch.load(f)
         model.load_state_dict(sdict)
     return model
+
+@torch.no_grad()
+def load_gpt2_weights_into_flexgpt(
+        model,
+        hf_model_name: str = "gpt2",
+        cache_dir: str = None,
+) -> None:
+    """
+    Loads HuggingFace GPT-2 pretrained weights into a max-level FlexGPT model.
+
+    Notes for self:
+
+    The max-level dimensions (hidden_dims[-1], num_heads[-1], mlp_dims[-1], num_layers)
+    must match the target HF model exactly. GPT-2 Small ("gpt2") matches FlexGPTConfig
+    with hidden_dims[-1]=768, num_heads[-1]=12, mlp_dims[-1]=3072, num_layers=12.
+
+    GPT-2 uses Conv1D which stores weights as [in, out] — the transpose of nn.Linear's
+    [out, in]. Every Conv1D weight is transposed before being written into FlexGPT.
+    """
+    from transformers import GPT2LMHeadModel
+
+    cfg = model.config
+    max_hidden = list(cfg.hidden_dims)[-1]
+    max_heads  = list(cfg.num_heads)[-1]
+    max_mlp    = list(cfg.mlp_dims)[-1]
+
+    hf = GPT2LMHeadModel.from_pretrained(hf_model_name, cache_dir=cache_dir)
+    sd = hf.state_dict()
+    del hf
+
+    model.set_level_use(model.max_level())
+
+    # Token embedding
+    model.token_embedding.embedding.weight.data.copy_(sd["transformer.wte.weight"])
+
+    # Positional embedding: GPT-2 [seq_len, hidden] → FlexGPT [1, seq_len, max_hidden]
+    model.pos_embedding.embedding.data.copy_(sd["transformer.wpe.weight"].unsqueeze(0))
+
+    for i in range(cfg.num_layers):
+        block = model.blocks[i]
+        pfx = f"transformer.h.{i}"
+
+        # Pre-attention layer norm
+        tmp_ln = nn.LayerNorm(max_hidden, eps=1e-5)
+        tmp_ln.weight.data.copy_(sd[f"{pfx}.ln_1.weight"])
+        tmp_ln.bias.data.copy_(sd[f"{pfx}.ln_1.bias"])
+        block.ln_1.load_from_base(tmp_ln)
+
+        # Self-attention — Conv1D weights need .T to become [out, in] (nn.Linear layout)
+        tmp_mha = nn.MultiheadAttention(max_hidden, max_heads, batch_first=True)
+        tmp_mha.in_proj_weight.data.copy_(sd[f"{pfx}.attn.c_attn.weight"].T)
+        tmp_mha.in_proj_bias.data.copy_(sd[f"{pfx}.attn.c_attn.bias"])
+        tmp_mha.out_proj.weight.data.copy_(sd[f"{pfx}.attn.c_proj.weight"].T)
+        tmp_mha.out_proj.bias.data.copy_(sd[f"{pfx}.attn.c_proj.bias"])
+        block.attn.load_from_base(tmp_mha)
+
+        # Post-attention layer norm
+        tmp_ln2 = nn.LayerNorm(max_hidden, eps=1e-5)
+        tmp_ln2.weight.data.copy_(sd[f"{pfx}.ln_2.weight"])
+        tmp_ln2.bias.data.copy_(sd[f"{pfx}.ln_2.bias"])
+        block.ln_2.load_from_base(tmp_ln2)
+
+        # MLP up-projection (c_fc): Conv1D [hidden, mlp] → .T → [mlp, hidden]
+        tmp_fc = nn.Linear(max_hidden, max_mlp)
+        tmp_fc.weight.data.copy_(sd[f"{pfx}.mlp.c_fc.weight"].T)
+        tmp_fc.bias.data.copy_(sd[f"{pfx}.mlp.c_fc.bias"])
+        block.mlp[0].load_from_base(tmp_fc)
+
+        # MLP down-projection (c_proj): Conv1D [mlp, hidden] → .T → [hidden, mlp]
+        tmp_proj = nn.Linear(max_mlp, max_hidden)
+        tmp_proj.weight.data.copy_(sd[f"{pfx}.mlp.c_proj.weight"].T)
+        tmp_proj.bias.data.copy_(sd[f"{pfx}.mlp.c_proj.bias"])
+        block.mlp[3].load_from_base(tmp_proj)
+
+    # Final layer norm
+    tmp_ln_f = nn.LayerNorm(max_hidden, eps=1e-5)
+    tmp_ln_f.weight.data.copy_(sd["transformer.ln_f.weight"])
+    tmp_ln_f.bias.data.copy_(sd["transformer.ln_f.bias"])
+    model.ln_f.load_from_base(tmp_ln_f)

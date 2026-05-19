@@ -414,6 +414,34 @@ CONFIGS = {
             ),
             GPTTrainingContext(dataset_name="wikitext-2-raw-v1"),
         ),
+        'wikitext103.gpt2pretrained': TrainerBuilder(
+            FlexLMTrainer,
+            FlexGPTConfig(
+                vocab_size=50257,
+                max_seq_length=1024,
+                num_layers=12,
+                hidden_dims=(384, 512, 768),
+                num_heads=(6, 8, 12),
+                mlp_dims=(1536, 2048, 3072),
+                dropout=0.1,
+                pretrained_hf_model="gpt2",
+            ),
+            GPTTrainingContext(wandb_project_name="FlexGPT_wikitext103_pretrained"),
+        ),
+        'wikitext2.gpt2pretrained': TrainerBuilder(
+            FlexLMTrainer,
+            FlexGPTConfig(
+                vocab_size=50257,
+                max_seq_length=1024,
+                num_layers=12,
+                hidden_dims=(384, 512, 768),
+                num_heads=(6, 8, 12),
+                mlp_dims=(1536, 2048, 3072),
+                dropout=0.1,
+                pretrained_hf_model="gpt2",
+            ),
+            GPTTrainingContext(dataset_name="wikitext-2-raw-v1"),
+        ),
         'wikitext2.tiny': TrainerBuilder(
             FlexLMTrainer,
             FlexGPTConfig(

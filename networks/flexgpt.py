@@ -9,6 +9,7 @@ from torch import nn
 import flex_modules as fm
 from networks.config import FlexModelConfig, ModelConfig
 from networks.flex_model import FlexModel
+from typing import Optional
 
 
 @dataclasses.dataclass
@@ -24,6 +25,7 @@ class FlexGPTConfig(FlexModelConfig):
     mlp_dims: Iterable[int] = (1536, 2048, 3072)
     dropout: float = 0.1
     tie_embeddings: bool = True
+    pretrained_hf_model: Optional[str] = None   # e.g. "gpt2", "gpt2-medium"
 
     def make_model(self) -> 'FlexGPT':
         return FlexGPT(self)
@@ -41,6 +43,7 @@ class MLPBlock(nn.Sequential):
     def __init__(self, hidden_dim: Iterable[int], mlp_dim: Iterable[int], dropout: float):
         super().__init__(
             fm.Linear(hidden_dim, mlp_dim, bias=True),
+            # nn.GELU(approximate='tanh'),
             nn.GELU(),
             nn.Dropout(dropout),
             fm.Linear(mlp_dim, hidden_dim, bias=True),

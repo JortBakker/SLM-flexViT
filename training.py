@@ -183,6 +183,12 @@ class FlexModelTrainer(pl.LightningModule, BaseTrainer):
                 self.submodel.set_level_use(lt)
                 utils.flexible_model_copy(lmodel, self.submodel)
 
+    def handle_pretrained_hf(self):
+        name = getattr(self.model_config, 'pretrained_hf_model', None)
+        if name is None:
+            return
+        utils.load_gpt2_weights_into_flexgpt(self.submodel, name)
+
     def handle_distill(self):
         if self.training_context.distill:
             distill_config = self.model_config.no_prebuilt()
@@ -200,6 +206,7 @@ class FlexModelTrainer(pl.LightningModule, BaseTrainer):
         torch.set_float32_matmul_precision('high')
 
         self.handle_load_from()
+        self.handle_pretrained_hf()
         self.handle_distill()
         self.train_loop(self, conf_description)
 
