@@ -120,6 +120,9 @@ def load_teacher():
     Teacher model loaded with the state dict and moved to device in eval mode.
     """
     # Create a timm ViT without distillation
+
+    ### REMINDER: add own model!!!!!
+
     model = timm.create_model('deit3_base_patch16_224.fb_in22k_ft_in1k', pretrained=True, num_classes=1000)
     model.eval().to(utils.get_device())
     return model

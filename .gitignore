@@ -12,3 +12,4 @@ run_imagenet.sh
 .*
 myenv
 plans
+results
