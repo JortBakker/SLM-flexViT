@@ -365,6 +365,7 @@ def load_openwebtext(
     max_seq_length: int = 1024,
     batch_size: int = 8,
     num_workers: int = 4,
+    map_workers: int = None,
     cache_dir: str = None,
     val_size: int = 2000,
     test_size: int = 2000,
@@ -400,10 +401,12 @@ def load_openwebtext(
         ids = torch.stack([b["input_ids"] for b in batch])
         return ids, ids
 
+    _map_workers = map_workers if map_workers is not None else num_workers
+
     def make_loader(split_name: str, shuffle: bool) -> DataLoader:
         ds = splits[split_name]
-        ds = ds.map(tokenize, batched=True, remove_columns=["text"], num_proc=num_workers)
-        ds = ds.map(pack, batched=True, remove_columns=["attention_mask"], num_proc=num_workers)
+        ds = ds.map(tokenize, batched=True, remove_columns=["text"], num_proc=_map_workers)
+        ds = ds.map(pack, batched=True, remove_columns=["attention_mask"], num_proc=_map_workers)
         ds.set_format(type="torch", columns=["input_ids"])
         return DataLoader(
             ds,
