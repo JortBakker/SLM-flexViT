@@ -2,6 +2,7 @@
 #SBATCH --job-name=flexgpt_openwebtext_kd
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=18
 #SBATCH --gpus-per-node=1
 #SBATCH -p gpu_h100
 #SBATCH --time=48:00:00
@@ -18,6 +19,8 @@ source "$HOME/FlexViT/myenv/bin/activate"
 mkdir -p "$HOME/FlexViT/logs"
 cd "$HOME/FlexViT"
 
+mkdir -p /scratch-shared/$USER/hf_cache
+mkdir -p /scratch-shared/$USER/hf_home
 export HF_DATASETS_CACHE=/scratch-shared/$USER/hf_cache
 export HF_HOME=/scratch-shared/$USER/hf_home
 
