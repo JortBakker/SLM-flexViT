@@ -17,6 +17,8 @@ import distillation.dataset
 from timm.optim import Lamb
 from timm.scheduler import CosineLRScheduler
 
+from training import FlexLMTrainer, FlexLMKDTrainer
+
 
 class ModelTraining(FlexTrainingContext):
     def __init__(self, *args, **kwargs):
@@ -123,7 +125,25 @@ class GPTTrainingContext(FlexTrainingContext):
         return SequentialLR(optimizer, schedulers=[warmup, cosine], milestones=[self.warmup_epochs])
 
 
-torch.serialization.add_safe_globals([GPTTrainingContext])
+@dataclasses.dataclass
+class FlexLMKDTrainingContext(GPTTrainingContext):
+    kd_lambda: float = 0.5
+    kd_temperature: float = 2.0
+
+    def __init__(self, kd_lambda=0.5, kd_temperature=2.0,
+                max_seq_length=1024, batch_size=8,
+                num_levels_per_step=None, patience=5, epochs=20,
+                *args, **kwargs):
+        loader = partial(utils.load_openwebtext,
+                        max_seq_length=max_seq_length, batch_size=batch_size)
+        FlexTrainingContext.__init__(self, loader, patience=patience, epochs=epochs, *args, **kwargs)
+        self.warmup_epochs = 10
+        self.num_levels_per_step = num_levels_per_step
+        self.kd_lambda = kd_lambda
+        self.kd_temperature = kd_temperature
+
+
+torch.serialization.add_safe_globals([GPTTrainingContext, FlexLMKDTrainingContext])
 
 
 CONFIGS = {
@@ -459,6 +479,27 @@ CONFIGS = {
                 batch_size=4,
                 epochs=5,
                 wandb_project_name="FlexGPT",
+            ),
+        ),
+        'openwebtext.kd_from_gpt2': TrainerBuilder(
+            FlexLMKDTrainer,
+            FlexGPTConfig(
+                vocab_size=50257,
+                max_seq_length=1024,
+                num_layers=12,
+                hidden_dims=(384, 512, 768),
+                num_heads=(6, 8, 12),
+                mlp_dims=(1536, 2048, 3072),
+                dropout=0.1,
+                pretrained_hf_model="gpt2",
+            ),
+            FlexLMKDTrainingContext(
+                kd_lambda=0.5,
+                kd_temperature=2.0,
+                batch_size=8,
+                epochs=20,
+                patience=5,
+                wandb_project_name="FlexGPT_openwebtext_kd",
             ),
         ),
     }, 'flexdeit_v3_lowFLOPS': TrainerBuilder(

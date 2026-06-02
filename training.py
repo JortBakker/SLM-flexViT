@@ -274,11 +274,109 @@ class FlexLMTrainer(FlexModelTrainer):
             opt.step()
 
 
+class FlexLMKDTrainer(FlexLMTrainer):
+    """
+    FlexLMTrainer extended with knowledge distillation from a frozen GPT-2 Small teacher.
+
+    For each flex level, the loss is:
+        L = kd_lambda * KL(student || teacher) + (1 - kd_lambda) * CE(student, true_tokens)
+
+    The teacher is loaded from HuggingFace and kept frozen throughout training.
+    """
+
+    def __init__(self, model_config, training_context: FlexTrainingContext):
+        super().__init__(model_config, training_context)
+        self._teacher = None  # loaded lazily in run_training
+
+    def _load_teacher(self):
+        from transformers import GPT2LMHeadModel
+        teacher = GPT2LMHeadModel.from_pretrained("gpt2")
+        teacher.eval()
+        for p in teacher.parameters():
+            p.requires_grad_(False)
+        return teacher
+
+    def _step(self, batch, stage: str) -> None:
+        input_ids, _ = batch
+
+        kd_lambda    = self.training_context.kd_lambda
+        T            = self.training_context.kd_temperature
+        vocab_size   = self.submodel.config.vocab_size
+
+        if stage == "train":
+            opt = self.optimizers()
+            opt.zero_grad()
+
+        # Teacher forward — no grad, done once per batch
+        with torch.no_grad():
+            teacher_logits = self._teacher(input_ids).logits  # [B, S, V]
+
+        all_levels = list(range(self.submodel.max_level() + 1))
+        num_sample = getattr(self.training_context, "num_levels_per_step", None)
+        if stage == "train" and num_sample is not None:
+            import random
+            levels = random.sample(all_levels, k=min(num_sample, len(all_levels)))
+        else:
+            levels = all_levels
+
+        total_loss = 0.0
+
+        for i in levels:
+            self.submodel.set_level_use(i)
+            logits = self(input_ids)  # [B, S, V]
+
+            # Shift by one position for CLM
+            student = logits[:, :-1]              # [B, S-1, V]
+            teacher = teacher_logits[:, :-1]      # [B, S-1, V]
+            targets = input_ids[:, 1:].reshape(-1)  # [B*(S-1)]
+
+            # CE loss against true tokens
+            ce_loss = F.cross_entropy(
+                student.reshape(-1, vocab_size),
+                targets,
+            )
+
+            # KL loss against teacher (soft targets, temperature T)
+            kl_loss = F.kl_div(
+                F.log_softmax(student / T, dim=-1).reshape(-1, vocab_size),
+                F.softmax(teacher / T, dim=-1).reshape(-1, vocab_size),
+                reduction="batchmean",
+            ) * (T ** 2)
+
+            loss = (1 - kd_lambda) * ce_loss + kd_lambda * kl_loss
+            ppl  = torch.exp(ce_loss.detach())
+
+            self.log(f"{stage}_level{i}_loss",    loss,    prog_bar=False, sync_dist=True)
+            self.log(f"{stage}_level{i}_ce_loss", ce_loss, prog_bar=False, sync_dist=True)
+            self.log(f"{stage}_level{i}_kl_loss", kl_loss, prog_bar=False, sync_dist=True)
+            self.log(f"{stage}_level{i}_ppl",     ppl,     prog_bar=(stage != "train"), sync_dist=True)
+
+            if stage == "train":
+                self.manual_backward(loss)
+            total_loss += loss.clone().detach()
+
+        self.log(f"{stage}_loss", total_loss, prog_bar=(stage != "train"), sync_dist=True)
+
+        if stage == "train":
+            opt.step()
+
+    def run_training(self, conf_description: str) -> None:
+        self._teacher = self._load_teacher()
+        # Move teacher to same device as model — Lightning handles model device,
+        # but teacher is not a submodule so we move it manually
+        super().run_training(conf_description)
+
+    def on_fit_start(self):
+        # Called by Lightning after it moves the model to GPU — move teacher too
+        if self._teacher is not None:
+            self._teacher = self._teacher.to(self.device)
+
+
 import functools
 torch.serialization.add_safe_globals([
-    TrainingContext, FlexTrainingContext, FlexModelTrainer, FlexLMTrainer,
-    functools.partial, utils.load_wikitext, utils.load_data, utils.load_imagenet,
-    utils.load_dummy_data])
+    TrainingContext, FlexTrainingContext, FlexModelTrainer, FlexLMTrainer, FlexLMKDTrainer,
+    functools.partial, utils.load_wikitext, utils.load_openwebtext, utils.load_data,
+    utils.load_imagenet, utils.load_dummy_data])
 
 
 class SimpleTrainer(pl.LightningModule, BaseTrainer):
@@ -392,7 +490,7 @@ def finetune(model: pl.LightningModule, config: TrainingContext, conf_descriptio
             if trainer.is_global_zero:
                 model = type(model).load_from_checkpoint(
                         checkpoint_callback.best_model_path)
-            
+
         else:
             model = type(model).load_from_checkpoint(
                     checkpoint_callback.best_model_path)

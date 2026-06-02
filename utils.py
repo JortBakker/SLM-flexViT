@@ -361,6 +361,61 @@ def load_wikitext(
     return make_loader("train", True), make_loader("validation", False), make_loader("test", False)
 
 
+def load_openwebtext(
+    max_seq_length: int = 1024,
+    batch_size: int = 8,
+    num_workers: int = 4,
+    cache_dir: str = None,
+    val_size: int = 2000,
+    test_size: int = 2000,
+) -> tuple[DataLoader, DataLoader, DataLoader]:
+    # OpenWebText — GPT-2's original training data, better for LAMBADA preservation
+    # than a Wikipedia-based corpus.
+    from datasets import load_dataset
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained("gpt2", cache_dir=cache_dir)
+
+    raw = load_dataset("Skylion007/openwebtext", cache_dir=cache_dir)["train"]
+
+    # OpenWebText has only a train split — carve out val and test
+    split = raw.train_test_split(test_size=val_size + test_size, seed=42)
+    val_test = split["test"].train_test_split(test_size=test_size, seed=42)
+    splits = {
+        "train":      split["train"],
+        "validation": val_test["train"],
+        "test":       val_test["test"],
+    }
+
+    def tokenize(examples):
+        return tokenizer(examples["text"])
+
+    def pack(examples):
+        ids = sum(examples["input_ids"], [])
+        total = (len(ids) // max_seq_length) * max_seq_length
+        chunks = [ids[i: i + max_seq_length] for i in range(0, total, max_seq_length)]
+        return {"input_ids": chunks}
+
+    def collate(batch):
+        ids = torch.stack([b["input_ids"] for b in batch])
+        return ids, ids
+
+    def make_loader(split_name: str, shuffle: bool) -> DataLoader:
+        ds = splits[split_name]
+        ds = ds.map(tokenize, batched=True, remove_columns=["text"])
+        ds = ds.map(pack, batched=True, remove_columns=["attention_mask"])
+        ds.set_format(type="torch", columns=["input_ids"])
+        return DataLoader(
+            ds,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=num_workers,
+            collate_fn=collate,
+        )
+
+    return make_loader("train", True), make_loader("validation", False), make_loader("test", False)
+
+
 def flexible_model_copy(src: Union[nn.Module, dict[str, Any]], dest: nn.Module):
     if not isinstance(src, nn.Module):
         dest.load_state_dict(src)
