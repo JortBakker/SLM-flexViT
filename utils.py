@@ -402,8 +402,8 @@ def load_openwebtext(
 
     def make_loader(split_name: str, shuffle: bool) -> DataLoader:
         ds = splits[split_name]
-        ds = ds.map(tokenize, batched=True, remove_columns=["text"])
-        ds = ds.map(pack, batched=True, remove_columns=["attention_mask"])
+        ds = ds.map(tokenize, batched=True, remove_columns=["text"], num_proc=num_workers)
+        ds = ds.map(pack, batched=True, remove_columns=["attention_mask"], num_proc=num_workers)
         ds.set_format(type="torch", columns=["input_ids"])
         return DataLoader(
             ds,
