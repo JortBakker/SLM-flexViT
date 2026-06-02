@@ -4,7 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
-#SBATCH --time=4:00:00
+#SBATCH --time=24:00:00
 #SBATCH --partition=rome
 #SBATCH --output=logs/preprocess_owt_%j.out
 #SBATCH --error=logs/preprocess_owt_%j.err
