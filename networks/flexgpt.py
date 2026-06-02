@@ -25,7 +25,7 @@ class FlexGPTConfig(FlexModelConfig):
     mlp_dims: Iterable[int] = (1536, 2048, 3072)
     dropout: float = 0.1
     tie_embeddings: bool = True
-    pretrained_hf_model: Optional[str] = None   # e.g. "gpt2", "gpt2-medium"
+    pretrained_hf_model: Optional[str] = None   # e.g. "gpt2"
 
     def make_model(self) -> 'FlexGPT':
         return FlexGPT(self)

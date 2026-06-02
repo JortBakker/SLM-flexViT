@@ -9,10 +9,8 @@
 #SBATCH --output=logs/preprocess_owt_%j.out
 #SBATCH --error=logs/preprocess_owt_%j.err
 
-mkdir -p /scratch-shared/$USER/hf_cache
-mkdir -p /scratch-shared/$USER/hf_home
-export HF_DATASETS_CACHE=/scratch-shared/$USER/hf_cache
-export HF_HOME=/scratch-shared/$USER/hf_home
+export HF_DATASETS_CACHE=$HOME/hf_cache
+export HF_HOME=$HOME/hf_home
 
 module load 2023
 module load Python/3.11.3-GCCcore-12.3.0

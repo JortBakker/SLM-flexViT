@@ -19,10 +19,8 @@ source "$HOME/FlexViT/myenv/bin/activate"
 mkdir -p "$HOME/FlexViT/logs"
 cd "$HOME/FlexViT"
 
-mkdir -p /scratch-shared/$USER/hf_cache
-mkdir -p /scratch-shared/$USER/hf_home
-export HF_DATASETS_CACHE=/scratch-shared/$USER/hf_cache
-export HF_HOME=/scratch-shared/$USER/hf_home
+export HF_DATASETS_CACHE=$HOME/hf_cache
+export HF_HOME=$HOME/hf_home
 
 nvidia-smi
 
