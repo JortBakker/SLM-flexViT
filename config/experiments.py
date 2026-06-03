@@ -3,6 +3,7 @@ from xml.parsers.expat import model
 
 from networks import flexresnet, flexvgg, flexvit, vit, flexdeit_v3
 from networks.flexgpt import FlexGPT, FlexGPTConfig
+from networks.flexllama import FlexLLaMA, FlexLLaMAConfig
 from training import *
 from training import FlexLMTrainer
 from networks.vit import ViTPrebuilt
@@ -149,7 +150,22 @@ class FlexLMKDTrainingContext(GPTTrainingContext):
         self.kd_temperature = kd_temperature
 
 
-torch.serialization.add_safe_globals([GPTTrainingContext, FlexLMKDTrainingContext])
+class LLaMATrainingContext(GPTTrainingContext):
+    """Training context for FlexLLaMA on FineWeb-Edu with the LLaMA tokenizer."""
+
+    def __init__(self, max_seq_length=1024, batch_size=8,
+                 num_levels_per_step=None, patience=5, epochs=20,
+                 max_examples=150_000, *args, **kwargs):
+        loader = partial(utils.load_fineweb_edu,
+                         max_seq_length=max_seq_length,
+                         batch_size=batch_size,
+                         max_examples=max_examples)
+        FlexTrainingContext.__init__(self, loader, patience=patience, epochs=epochs, *args, **kwargs)
+        self.warmup_epochs = 10
+        self.num_levels_per_step = num_levels_per_step
+
+
+torch.serialization.add_safe_globals([GPTTrainingContext, FlexLMKDTrainingContext, LLaMATrainingContext])
 
 
 CONFIGS = {
@@ -504,8 +520,8 @@ CONFIGS = {
                 kd_temperature=2.0,
                 dataset="wikitext-103-raw-v1",
                 batch_size=8,
-                epochs=20,
-                patience=5,
+                epochs=10,
+                patience=3,
                 wandb_project_name="FlexGPT_wikitext103_kd",
             ),
         ),
@@ -528,6 +544,23 @@ CONFIGS = {
                 epochs=3,
                 patience=3,
                 wandb_project_name="FlexGPT_openwebtext_kd",
+            ),
+        ),
+    }, 'flexllama': {
+        'fineweb.3levels': TrainerBuilder(
+            FlexLMTrainer,
+            FlexLLaMAConfig(),
+            LLaMATrainingContext(
+                wandb_project_name="FlexLLaMA_fineweb",
+            ),
+        ),
+        'fineweb.pretrained': TrainerBuilder(
+            FlexLMTrainer,
+            FlexLLaMAConfig(
+                pretrained_hf_model="JackFram/llama-160m",
+            ),
+            LLaMATrainingContext(
+                wandb_project_name="FlexLLaMA_fineweb_pretrained",
             ),
         ),
     }, 'flexdeit_v3_lowFLOPS': TrainerBuilder(

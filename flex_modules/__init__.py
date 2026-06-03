@@ -11,3 +11,5 @@ from flex_modules.selfattention import *
 from flex_modules.pos_embedding import *
 from flex_modules.layer_scale import *
 from flex_modules.distill_token import *
+from flex_modules.rmsnorm import *
+from flex_modules.rope_attention import *

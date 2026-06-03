@@ -187,7 +187,14 @@ class FlexModelTrainer(pl.LightningModule, BaseTrainer):
         name = getattr(self.model_config, 'pretrained_hf_model', None)
         if name is None:
             return
-        utils.load_gpt2_weights_into_flexgpt(self.submodel, name)
+        from networks.flexgpt import FlexGPT
+        from networks.flexllama import FlexLLaMA
+        if isinstance(self.submodel, FlexGPT):
+            utils.load_gpt2_weights_into_flexgpt(self.submodel, name)
+        elif isinstance(self.submodel, FlexLLaMA):
+            utils.load_llama_weights_into_flexllama(self.submodel, name)
+        else:
+            raise ValueError(f"No pretrained loader registered for {type(self.submodel).__name__}")
 
     def handle_distill(self):
         if self.training_context.distill:

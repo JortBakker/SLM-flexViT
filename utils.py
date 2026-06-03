@@ -419,6 +419,86 @@ def load_openwebtext(
     return make_loader("train", True), make_loader("validation", False), make_loader("test", False)
 
 
+def load_fineweb_edu(
+    max_seq_length: int = 1024,
+    batch_size: int = 8,
+    num_workers: int = 4,
+    map_workers: int = None,
+    cache_dir: str = None,
+    max_examples: int = 150_000,
+    val_size: int = 2000,
+    test_size: int = 2000,
+) -> tuple[DataLoader, DataLoader, DataLoader]:
+    """
+    Loads FineWeb-Edu (sample-10BT), tokenises with the LLaMA tokenizer,
+    packs sequences to max_seq_length, and returns (train, val, test) loaders.
+
+    max_examples limits the number of source documents (default 150k ≈ 100M tokens
+    at ~700 tokens/doc average). FineWeb-Edu has only a train split — val and test
+    are carved out with a fixed seed.
+
+    Tokenizer: JackFram/llama-160m (vocab_size=32000, matches target checkpoint).
+    add_special_tokens=False suppresses the LLaMA BOS token so the packed format
+    is consistent with the existing GPT-2 loaders.
+    """
+    from datasets import load_dataset, Dataset
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained("JackFram/llama-160m", cache_dir=cache_dir)
+
+    # Stream to avoid downloading the full 10BT dataset — only fetch the shards
+    # that contain the first max_examples documents (~450MB instead of ~100GB).
+    raw_stream = load_dataset(
+        "HuggingFaceFW/fineweb-edu",
+        name="sample-10BT",
+        split="train",
+        streaming=True,
+        cache_dir=cache_dir,
+    )
+    raw = Dataset.from_list(list(raw_stream.take(max_examples)))
+
+    # FineWeb-Edu has only a train split — carve out val and test
+    split   = raw.train_test_split(test_size=val_size + test_size, seed=42)
+    val_test = split["test"].train_test_split(test_size=test_size, seed=42)
+    splits = {
+        "train":      split["train"],
+        "validation": val_test["train"],
+        "test":       val_test["test"],
+    }
+
+    def tokenize(examples):
+        return tokenizer(examples["text"], add_special_tokens=False)
+
+    def pack(examples):
+        ids = sum(examples["input_ids"], [])
+        total = (len(ids) // max_seq_length) * max_seq_length
+        chunks = [ids[i: i + max_seq_length] for i in range(0, total, max_seq_length)]
+        return {"input_ids": chunks}
+
+    def collate(batch):
+        ids = torch.stack([b["input_ids"] for b in batch])
+        return ids, ids
+
+    _map_workers = map_workers if map_workers is not None else num_workers
+
+    def make_loader(split_name: str, shuffle: bool) -> DataLoader:
+        ds = splits[split_name]
+        # remove_columns=ds.column_names drops text + all FineWeb-Edu metadata,
+        # leaving only the tokenizer outputs (input_ids, attention_mask).
+        ds = ds.map(tokenize, batched=True, remove_columns=ds.column_names, num_proc=_map_workers)
+        ds = ds.map(pack, batched=True, remove_columns=["attention_mask"], num_proc=_map_workers)
+        ds.set_format(type="torch", columns=["input_ids"])
+        return DataLoader(
+            ds,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=num_workers,
+            collate_fn=collate,
+        )
+
+    return make_loader("train", True), make_loader("validation", False), make_loader("test", False)
+
+
 def flexible_model_copy(src: Union[nn.Module, dict[str, Any]], dest: nn.Module):
     if not isinstance(src, nn.Module):
         dest.load_state_dict(src)
@@ -543,3 +623,101 @@ def load_gpt2_weights_into_flexgpt(
     tmp_ln_f.weight.data.copy_(sd["transformer.ln_f.weight"])
     tmp_ln_f.bias.data.copy_(sd["transformer.ln_f.bias"])
     model.ln_f.load_from_base(tmp_ln_f)
+
+
+def load_llama_weights_into_flexllama(
+        model,
+        hf_model_name: str,
+        cache_dir: str = None,
+) -> None:
+    """
+    Loads HuggingFace LLaMA-1/2 pretrained weights into a max-level FlexLLaMA model.
+
+    The max-level dimensions (hidden_dims[-1], num_heads[-1], intermediate_dims[-1],
+    num_layers, vocab_size) must match the target checkpoint exactly. LLaMA weights are
+    stored as [out, in] (standard nn.Linear layout) — no transposition needed, unlike GPT-2.
+
+    Only the max-level weights are loaded. Smaller levels start from their current
+    (random) initialisation and are trained to approximate the full model.
+
+    Note: LLaMA models on HuggingFace Hub require accepting Meta's licence agreement
+    before the weights can be downloaded.
+    """
+    from transformers import AutoModelForCausalLM
+    from flex_modules.rmsnorm import _RMSNormBase
+
+    cfg = model.config
+    max_hidden       = list(cfg.hidden_dims)[-1]
+    max_intermediate = list(cfg.intermediate_dims)[-1]
+
+    hf = AutoModelForCausalLM.from_pretrained(hf_model_name, cache_dir=cache_dir)
+    sd = hf.state_dict()
+    del hf
+
+    # Validate dimensions upfront so failures are obvious rather than silent shape errors.
+    hf_hidden = sd["model.embed_tokens.weight"].shape[1]
+    hf_vocab  = sd["model.embed_tokens.weight"].shape[0]
+    hf_layers = sum(
+        1 for k in sd if k.startswith("model.layers.") and k.endswith(".input_layernorm.weight")
+    )
+    hf_intermediate = sd["model.layers.0.mlp.gate_proj.weight"].shape[0]
+
+    if hf_hidden != max_hidden:
+        raise ValueError(f"Hidden dim mismatch: checkpoint={hf_hidden}, model max level={max_hidden}")
+    if hf_vocab != cfg.vocab_size:
+        raise ValueError(f"Vocab size mismatch: checkpoint={hf_vocab}, model={cfg.vocab_size}")
+    if hf_layers != cfg.num_layers:
+        raise ValueError(f"Layer count mismatch: checkpoint={hf_layers}, model={cfg.num_layers}")
+    if hf_intermediate != max_intermediate:
+        raise ValueError(f"Intermediate dim mismatch: checkpoint={hf_intermediate}, model max level={max_intermediate}")
+
+    model.set_level_use(model.max_level())
+
+    # Token embedding
+    tmp_emb = nn.Embedding(cfg.vocab_size, max_hidden)
+    tmp_emb.weight.data.copy_(sd["model.embed_tokens.weight"])
+    model.embed_tokens.load_from_base(tmp_emb)
+
+    for i in range(cfg.num_layers):
+        block = model.layers[i]
+        pfx   = f"model.layers.{i}"
+
+        # Input RMSNorm
+        tmp_rms = _RMSNormBase(max_hidden, eps=cfg.rms_norm_eps)
+        tmp_rms.weight.data.copy_(sd[f"{pfx}.input_layernorm.weight"])
+        block.input_layernorm.load_from_base(tmp_rms)
+
+        # Attention projections — [out, in] layout, no transpose needed
+        for proj in ("q_proj", "k_proj", "v_proj", "o_proj"):
+            tmp_linear = nn.Linear(max_hidden, max_hidden, bias=False)
+            tmp_linear.weight.data.copy_(sd[f"{pfx}.self_attn.{proj}.weight"])
+            getattr(block.self_attn, proj).load_from_base(tmp_linear)
+
+        # Post-attention RMSNorm
+        tmp_rms2 = _RMSNormBase(max_hidden, eps=cfg.rms_norm_eps)
+        tmp_rms2.weight.data.copy_(sd[f"{pfx}.post_attention_layernorm.weight"])
+        block.post_attention_layernorm.load_from_base(tmp_rms2)
+
+        # MLP
+        tmp_gate = nn.Linear(max_hidden, max_intermediate, bias=False)
+        tmp_gate.weight.data.copy_(sd[f"{pfx}.mlp.gate_proj.weight"])
+        block.mlp.gate_proj.load_from_base(tmp_gate)
+
+        tmp_up = nn.Linear(max_hidden, max_intermediate, bias=False)
+        tmp_up.weight.data.copy_(sd[f"{pfx}.mlp.up_proj.weight"])
+        block.mlp.up_proj.load_from_base(tmp_up)
+
+        tmp_down = nn.Linear(max_intermediate, max_hidden, bias=False)
+        tmp_down.weight.data.copy_(sd[f"{pfx}.mlp.down_proj.weight"])
+        block.mlp.down_proj.load_from_base(tmp_down)
+
+    # Final RMSNorm
+    tmp_rms_f = _RMSNormBase(max_hidden, eps=cfg.rms_norm_eps)
+    tmp_rms_f.weight.data.copy_(sd["model.norm.weight"])
+    model.norm.load_from_base(tmp_rms_f)
+
+    # LM head (untied)
+    if not cfg.tie_embeddings:
+        tmp_lm_head = nn.Linear(max_hidden, cfg.vocab_size, bias=False)
+        tmp_lm_head.weight.data.copy_(sd["lm_head.weight"])
+        model.lm_head.load_from_base(tmp_lm_head)
