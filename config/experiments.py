@@ -131,12 +131,17 @@ class FlexLMKDTrainingContext(GPTTrainingContext):
     kd_temperature: float = 2.0
 
     def __init__(self, kd_lambda=0.5, kd_temperature=2.0,
+                dataset="wikitext-103-raw-v1",
                 max_seq_length=1024, batch_size=8,
                 num_levels_per_step=None, patience=5, epochs=20,
                 *args, **kwargs):
-        loader = partial(utils.load_openwebtext,
-                        max_seq_length=max_seq_length, batch_size=batch_size,
-                        num_workers=16)
+        if dataset == "openwebtext":
+            loader = partial(utils.load_openwebtext,
+                            max_seq_length=max_seq_length, batch_size=batch_size,
+                            num_workers=16)
+        else:
+            loader = partial(utils.load_wikitext, dataset_name=dataset,
+                            max_seq_length=max_seq_length, batch_size=batch_size)
         FlexTrainingContext.__init__(self, loader, patience=patience, epochs=epochs, *args, **kwargs)
         self.warmup_epochs = 10
         self.num_levels_per_step = num_levels_per_step
@@ -497,6 +502,7 @@ CONFIGS = {
             FlexLMKDTrainingContext(
                 kd_lambda=1.0,
                 kd_temperature=2.0,
+                dataset="wikitext-103-raw-v1",
                 batch_size=8,
                 epochs=20,
                 patience=5,
