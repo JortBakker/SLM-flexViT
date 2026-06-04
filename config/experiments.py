@@ -154,7 +154,7 @@ class LLaMATrainingContext(GPTTrainingContext):
     """Training context for FlexLLaMA. Defaults to FineWeb-Edu."""
 
     def __init__(self, dataset="fineweb-edu", max_seq_length=1024, batch_size=8,
-                 num_levels_per_step=None, patience=5, epochs=20,
+                 num_levels_per_step=None, patience=3, epochs=10,
                  max_examples=150_000, *args, **kwargs):
         if dataset == "fineweb-edu":
             loader = partial(utils.load_fineweb_edu,
