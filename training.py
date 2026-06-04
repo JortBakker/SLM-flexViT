@@ -382,8 +382,8 @@ class FlexLMKDTrainer(FlexLMTrainer):
 import functools
 torch.serialization.add_safe_globals([
     TrainingContext, FlexTrainingContext, FlexModelTrainer, FlexLMTrainer, FlexLMKDTrainer,
-    functools.partial, utils.load_wikitext, utils.load_openwebtext, utils.load_data,
-    utils.load_imagenet, utils.load_dummy_data])
+    functools.partial, utils.load_wikitext, utils.load_openwebtext, utils.load_fineweb_edu,
+    utils.load_data, utils.load_imagenet, utils.load_dummy_data])
 
 
 class SimpleTrainer(pl.LightningModule, BaseTrainer):

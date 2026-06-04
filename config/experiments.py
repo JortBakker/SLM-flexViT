@@ -151,15 +151,20 @@ class FlexLMKDTrainingContext(GPTTrainingContext):
 
 
 class LLaMATrainingContext(GPTTrainingContext):
-    """Training context for FlexLLaMA on FineWeb-Edu with the LLaMA tokenizer."""
+    """Training context for FlexLLaMA. Defaults to FineWeb-Edu."""
 
-    def __init__(self, max_seq_length=1024, batch_size=8,
+    def __init__(self, dataset="fineweb-edu", max_seq_length=1024, batch_size=8,
                  num_levels_per_step=None, patience=5, epochs=20,
                  max_examples=150_000, *args, **kwargs):
-        loader = partial(utils.load_fineweb_edu,
-                         max_seq_length=max_seq_length,
-                         batch_size=batch_size,
-                         max_examples=max_examples)
+        if dataset == "fineweb-edu":
+            loader = partial(utils.load_fineweb_edu,
+                             max_seq_length=max_seq_length,
+                             batch_size=batch_size,
+                             max_examples=max_examples)
+        else:
+            loader = partial(utils.load_wikitext, dataset_name=dataset,
+                             max_seq_length=max_seq_length,
+                             batch_size=batch_size)
         FlexTrainingContext.__init__(self, loader, patience=patience, epochs=epochs, *args, **kwargs)
         self.warmup_epochs = 10
         self.num_levels_per_step = num_levels_per_step
@@ -561,6 +566,18 @@ CONFIGS = {
             ),
             LLaMATrainingContext(
                 wandb_project_name="FlexLLaMA_fineweb_pretrained",
+            ),
+        ),
+        'fineweb.tiny': TrainerBuilder(
+            FlexLMTrainer,
+            FlexLLaMAConfig(
+                pretrained_hf_model="JackFram/llama-160m",
+            ),
+            LLaMATrainingContext(
+                dataset="fineweb-edu",
+                epochs=1,
+                patience=1,
+                wandb_project_name=None,
             ),
         ),
     }, 'flexdeit_v3_lowFLOPS': TrainerBuilder(
