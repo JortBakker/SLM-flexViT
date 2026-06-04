@@ -373,10 +373,16 @@ class FlexLMKDTrainer(FlexLMTrainer):
         object.__setattr__(self, '_teacher', self._load_teacher())
         super().run_training(conf_description)
 
+    def _ensure_teacher(self):
+        if self._teacher is None:
+            object.__setattr__(self, '_teacher', self._load_teacher())
+        object.__setattr__(self, '_teacher', self._teacher.to(self.device))
+
     def on_fit_start(self):
-        # Called by Lightning after it moves the model to GPU — move teacher too
-        if self._teacher is not None:
-            object.__setattr__(self, '_teacher', self._teacher.to(self.device))
+        self._ensure_teacher()
+
+    def on_test_start(self):
+        self._ensure_teacher()
 
 
 import functools
