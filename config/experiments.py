@@ -508,6 +508,28 @@ CONFIGS = {
                 wandb_project_name="FlexGPT",
             ),
         ),
+        'wikitext103.kd_tiny': TrainerBuilder(
+            FlexLMKDTrainer,
+            FlexGPTConfig(
+                vocab_size=50257,
+                max_seq_length=1024,
+                num_layers=12,
+                hidden_dims=(384, 512, 768),
+                num_heads=(6, 8, 12),
+                mlp_dims=(1536, 2048, 3072),
+                dropout=0.1,
+                pretrained_hf_model="gpt2",
+            ),
+            FlexLMKDTrainingContext(
+                kd_lambda=1.0,
+                kd_temperature=2.0,
+                dataset="wikitext-103-raw-v1",
+                batch_size=8,
+                epochs=1,
+                patience=1,
+                wandb_project_name=None,
+            ),
+        ),
         'wikitext103.kd_from_gpt2': TrainerBuilder(
             FlexLMKDTrainer,
             FlexGPTConfig(
