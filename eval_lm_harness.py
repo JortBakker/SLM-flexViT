@@ -131,7 +131,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="flexgpt,wikitext103.gpt2pretrained")
-    parser.add_argument("--tasks", default="wikitext,lambada_openai,hellaswag,piqa")
+    parser.add_argument("--tasks", default="wikitext,lambada_openai,hellaswag,piqa,arc_easy,arc_challenge,openbookqa,triviaqa")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--output", default="results/flexgpt_eval.json")

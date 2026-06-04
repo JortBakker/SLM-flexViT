@@ -293,7 +293,9 @@ class FlexLMKDTrainer(FlexLMTrainer):
 
     def __init__(self, model_config, training_context: FlexTrainingContext):
         super().__init__(model_config, training_context)
-        self._teacher = None  # loaded lazily in run_training
+        # Store as plain Python attribute, not a PyTorch submodule, so Lightning
+        # doesn't include teacher weights in checkpoints.
+        object.__setattr__(self, '_teacher', None)
 
     def _load_teacher(self):
         from transformers import GPT2LMHeadModel
@@ -368,15 +370,13 @@ class FlexLMKDTrainer(FlexLMTrainer):
             opt.step()
 
     def run_training(self, conf_description: str) -> None:
-        self._teacher = self._load_teacher()
-        # Move teacher to same device as model — Lightning handles model device,
-        # but teacher is not a submodule so we move it manually
+        object.__setattr__(self, '_teacher', self._load_teacher())
         super().run_training(conf_description)
 
     def on_fit_start(self):
         # Called by Lightning after it moves the model to GPU — move teacher too
         if self._teacher is not None:
-            self._teacher = self._teacher.to(self.device)
+            object.__setattr__(self, '_teacher', self._teacher.to(self.device))
 
 
 import functools
