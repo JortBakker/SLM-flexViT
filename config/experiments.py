@@ -527,7 +527,7 @@ CONFIGS = {
                 batch_size=8,
                 epochs=1,
                 patience=1,
-                wandb_project_name=None,
+                wandb_project_name="FlexGPT_wikitext103_kd",
             ),
         ),
         'wikitext103.kd_from_gpt2': TrainerBuilder(
@@ -599,7 +599,7 @@ CONFIGS = {
                 dataset="fineweb-edu",
                 epochs=1,
                 patience=1,
-                wandb_project_name=None,
+                wandb_project_name="FlexLLaMA_fineweb_pretrained_tiny",
             ),
         ),
     }, 'flexdeit_v3_lowFLOPS': TrainerBuilder(
