@@ -19,8 +19,9 @@ source "$HOME/FlexViT/myenv/bin/activate"
 mkdir -p "$HOME/FlexViT/logs"
 cd "$HOME/FlexViT"
 
-export HF_DATASETS_CACHE=$HOME/hf_cache
-export HF_HOME=$HOME/hf_home
+export HF_DATASETS_CACHE=/scratch-shared/$USER/hf_cache
+export HF_HOME=/scratch-shared/$USER/hf_home
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 nvidia-smi
 

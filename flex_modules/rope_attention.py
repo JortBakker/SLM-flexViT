@@ -1,3 +1,7 @@
+"""
+rope operation largely adapted from https://github.com/meta-llama/codellama/blob/main/llama/model.py
+"""
+
 from typing import Iterable
 
 import torch
