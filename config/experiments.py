@@ -547,7 +547,7 @@ CONFIGS = {
                 kd_temperature=2.0,
                 dataset="wikitext-103-raw-v1",
                 batch_size=8,
-                epochs=10,
+                epochs=5,
                 patience=3,
                 wandb_project_name="FlexGPT_wikitext103_kd",
             ),
@@ -588,6 +588,7 @@ CONFIGS = {
             ),
             LLaMATrainingContext(
                 wandb_project_name="FlexLLaMA_fineweb_pretrained",
+                epochs=5,
             ),
         ),
         'fineweb.tiny': TrainerBuilder(
