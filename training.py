@@ -1,6 +1,6 @@
 from typing import Callable, Optional
 import dataclasses
-import tempfile
+import os
 import datetime
 import logging
 
@@ -450,63 +450,92 @@ def finetune(model: pl.LightningModule, config: TrainingContext, conf_descriptio
         logging.getLogger(
             'lightning_fabric.utilities.distributed').setLevel(logging.ERROR)
 
-    with tempfile.TemporaryDirectory() as tdir:
-        early_stopping = EarlyStopping(
-            monitor='val_loss', patience=config.patience, mode='min', verbose=True)
+    # Persistent directory — survives crashes; temp dirs lose weights if anything
+    # between trainer.fit() and utils.save_model() raises.
+    ckpt_dir = paths.CHECKPOINT_PATH / utils.make_str_filename_safe(conf_description)
+    os.makedirs(ckpt_dir, exist_ok=True)
 
-        checkpoint_callback = ModelCheckpoint(
-            dirpath=tdir,
-            filename='best-model',
-            monitor='val_loss',
-            mode='min',
-            save_top_k=1
-        )
+    early_stopping = EarlyStopping(
+        monitor='val_loss', patience=config.patience, mode='min', verbose=True)
 
-        callbacks = [early_stopping, checkpoint_callback]
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=ckpt_dir,
+        filename='best-model',
+        monitor='val_loss',
+        mode='min',
+        save_top_k=1
+    )
 
-        kwargs = dict()
-        if config.wandb_project_name is not None:
-            if logger is None:
-                logger = WandbLogger(
-                    project=config.wandb_project_name,
-                    name=f"{conf_description}_das6",
-                    config=model_config.get_flat_dict(),
-                    save_dir=paths.LOG_PATH,
-                    dir=paths.LOG_PATH,
-                    log_model=False)
-            kwargs['logger'] = logger
-        else:
-            kwargs['logger'] = False
+    callbacks = [early_stopping, checkpoint_callback]
 
-        if config.unittest_mode:
-            kwargs['enable_progress_bar'] = False
-            kwargs['enable_model_summary'] = False
+    kwargs = dict()
+    if config.wandb_project_name is not None:
+        if logger is None:
+            logger = WandbLogger(
+                project=config.wandb_project_name,
+                name=f"{conf_description}_das6",
+                config=model_config.get_flat_dict(),
+                save_dir=paths.LOG_PATH,
+                dir=paths.LOG_PATH,
+                log_model=False)
+        kwargs['logger'] = logger
+    else:
+        kwargs['logger'] = False
 
-        ddp = DDPStrategy(process_group_backend='nccl', find_unused_parameters=True)
-        trainer = pl.Trainer(
-            **kwargs,
-            max_epochs=config.epochs,
-            callbacks=callbacks,
-            log_every_n_steps=10,
-            enable_checkpointing=True,
-            accelerator="gpu",
-            devices="auto",
-            num_nodes=utils.get_num_nodes(),
-            strategy=ddp,
-            precision='bf16-mixed'
-        )
+    if config.unittest_mode:
+        kwargs['enable_progress_bar'] = False
+        kwargs['enable_model_summary'] = False
 
-        train_loader, val_loader, test_loader = config.loader_function()
+    ddp = DDPStrategy(process_group_backend='nccl', find_unused_parameters=True)
+    trainer = pl.Trainer(
+        **kwargs,
+        max_epochs=config.epochs,
+        callbacks=callbacks,
+        log_every_n_steps=10,
+        enable_checkpointing=True,
+        accelerator="gpu",
+        devices="auto",
+        num_nodes=utils.get_num_nodes(),
+        strategy=ddp,
+        precision='bf16-mixed'
+    )
+
+    train_loader, val_loader, test_loader = config.loader_function()
+
+    try:
         trainer.fit(model, train_loader, val_loader)
+    except Exception as exc:
+        # Training may have fully completed before a post-epoch callback (e.g.
+        # scheduler step) raised.  Try to recover and permanently save the best
+        # checkpoint so the run is not completely lost.
+        best_path = getattr(checkpoint_callback, 'best_model_path', '')
+        if best_path:
+            logging.warning(
+                f"trainer.fit() raised {exc!r} — attempting recovery from {best_path}")
+            try:
+                recovered = type(model).load_from_checkpoint(best_path)
+                utils.save_model(conf_description, recovered.submodel)
+                logging.warning("Recovery succeeded — weights saved to permanent storage.")
+            except Exception as rec_exc:
+                logging.error(
+                    f"Recovery failed: {rec_exc!r}. Checkpoint preserved at: {best_path}")
+        raise
 
-        if utils.get_num_nodes() > 1:
-            if trainer.is_global_zero:
-                model = type(model).load_from_checkpoint(
-                        checkpoint_callback.best_model_path)
-
-        else:
+    # Load best checkpoint and save immediately — before test() can crash.
+    if utils.get_num_nodes() > 1:
+        if trainer.is_global_zero:
             model = type(model).load_from_checkpoint(
-                    checkpoint_callback.best_model_path)
+                checkpoint_callback.best_model_path)
+            utils.save_model(conf_description, model.submodel)
+    else:
+        model = type(model).load_from_checkpoint(
+            checkpoint_callback.best_model_path)
+        utils.save_model(conf_description, model.submodel)
+
+    # Testing is informational — a failure here must not erase already-saved weights.
+    try:
         trainer.test(model, dataloaders=test_loader, verbose=False)
+    except Exception as exc:
+        logging.warning(f"trainer.test() failed (weights already saved): {exc!r}")
 
     return model

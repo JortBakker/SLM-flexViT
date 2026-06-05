@@ -68,7 +68,7 @@ class ViTTraining100(FlexTrainingContext):
 
     def make_scheduler(self, optimizer):
         warmup = LinearLR(optimizer, start_factor=0.1, total_iters=10)
-        cosine = CosineAnnealingLR(optimizer, T_max=self.epochs-10)
+        cosine = CosineAnnealingLR(optimizer, T_max=max(1, self.epochs - 10))
         return SequentialLR(optimizer, schedulers=[warmup, cosine], milestones=[10])
 
 
