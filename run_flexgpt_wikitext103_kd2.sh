@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=18
 #SBATCH --gpus-per-node=1
 #SBATCH -p gpu_h100
-#SBATCH --time=48:00:00
+#SBATCH --time=10:00:00
 #SBATCH --mem=0
 #SBATCH --output=logs/flexgpt_wikitext103_kd_%j.out
 #SBATCH --error=logs/flexgpt_wikitext103_kd_%j.err
