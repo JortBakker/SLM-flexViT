@@ -166,7 +166,7 @@ class LLaMATrainingContext(GPTTrainingContext):
                              max_seq_length=max_seq_length,
                              batch_size=batch_size)
         FlexTrainingContext.__init__(self, loader, patience=patience, epochs=epochs, *args, **kwargs)
-        self.warmup_epochs = 10
+        self.warmup_epochs = 2
         self.num_levels_per_step = num_levels_per_step
 
 
