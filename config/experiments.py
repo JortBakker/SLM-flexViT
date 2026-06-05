@@ -122,7 +122,7 @@ class GPTTrainingContext(FlexTrainingContext):
 
     def make_scheduler(self, optimizer):
         warmup = LinearLR(optimizer, start_factor=0.1, total_iters=self.warmup_epochs)
-        cosine = CosineAnnealingLR(optimizer, T_max=self.epochs - self.warmup_epochs, eta_min=1e-5)
+        cosine = CosineAnnealingLR(optimizer, T_max=max(1, self.epochs - self.warmup_epochs), eta_min=1e-5)
         return SequentialLR(optimizer, schedulers=[warmup, cosine], milestones=[self.warmup_epochs])
 
 
