@@ -25,7 +25,7 @@ export HF_HOME=/scratch-shared/$USER/hf_home
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 CONFIG=${1:-"flexgpt,wikitext103.kd_from_gpt2"}
-TASKS=${2:-"lambada_openai"}
+# TASKS=${2:-"lambada_openai"}
 OUTPUT="results/$(echo $CONFIG | tr ',' '_' | tr '.' '_')_eval.json"
 
 echo "Evaluating: $CONFIG"
@@ -34,7 +34,7 @@ echo "Output: $OUTPUT"
 
 srun python3 eval_lm_harness.py \
     --config "$CONFIG" \
-    --tasks "$TASKS" \
+    # --tasks "$TASKS" \
     --output "$OUTPUT"
 
 echo "Eval complete"
