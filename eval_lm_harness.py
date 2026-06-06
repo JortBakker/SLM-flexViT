@@ -1,4 +1,4 @@
-# Run FlexGPT through EleutherAI's lm-evaluation-harness.
+# Run FlexGPT/FlexLLaMA through EleutherAI's lm-evaluation-harness.
 # Useful for comparing against published model numbers on standard benchmarks
 # (HellaSwag, LAMBADA, etc.). Note that word perplexity reported here is NOT
 # the same as the token perplexity logged to W&B — see eval_wikitext103.py for that.
@@ -8,7 +8,7 @@ import os
 
 import torch
 import torch.nn.functional as F
-from transformers import GPT2TokenizerFast
+from transformers import GPT2TokenizerFast, AutoTokenizer
 from lm_eval.api.model import LM
 from lm_eval.api.registry import register_model
 from lm_eval import evaluator
@@ -125,6 +125,21 @@ class FlexGPTLMEval(LM):
         return results
 
 
+@register_model("flexllama")
+class FlexLLaMALMEval(FlexGPTLMEval):
+
+    def __init__(self, model, level: int, device: str = "cuda"):
+        # Call LM.__init__ directly to skip GPT2TokenizerFast setup in parent
+        LM.__init__(self)
+        self.model = model.to(device)
+        self.model.set_level_use(level)
+        self.model.eval()
+        self._device = device
+        self._tokenizer = AutoTokenizer.from_pretrained("JackFram/llama-160m")
+        if self._tokenizer.pad_token is None:
+            self._tokenizer.pad_token = self._tokenizer.eos_token
+
+
 if __name__ == "__main__":
     from run_experiment import resolve_from_str
     from utils import load_model
@@ -141,9 +156,12 @@ if __name__ == "__main__":
     model = load_model(args.config, builder.model_config)
     model.eval()
 
+    is_llama = args.config.startswith("flexllama")
+    EvalClass = FlexLLaMALMEval if is_llama else FlexGPTLMEval
+
     all_results = {}
     for level in range(model.max_level() + 1):
-        lm = FlexGPTLMEval(model, level=level, device=args.device)
+        lm = EvalClass(model, level=level, device=args.device)
         results = evaluator.simple_evaluate(
             model=lm,
             tasks=args.tasks.split(","),
