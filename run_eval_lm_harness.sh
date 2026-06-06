@@ -34,7 +34,6 @@ echo "Output: $OUTPUT"
 
 srun python3 eval_lm_harness.py \
     --config "$CONFIG" \
-    # --tasks "$TASKS" \
     --output "$OUTPUT"
 
 echo "Eval complete"
