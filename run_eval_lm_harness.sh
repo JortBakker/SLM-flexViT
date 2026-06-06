@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=18
 #SBATCH --gpus-per-node=1
 #SBATCH -p gpu_h100
-#SBATCH --time=04:00:00
+#SBATCH --time=10:00:00
 #SBATCH --mem=0
 #SBATCH --output=logs/lm_eval_%j.out
 #SBATCH --error=logs/lm_eval_%j.err
