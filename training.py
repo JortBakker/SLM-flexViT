@@ -298,8 +298,9 @@ class FlexLMKDTrainer(FlexLMTrainer):
         object.__setattr__(self, '_teacher', None)
 
     def _load_teacher(self):
-        from transformers import GPT2LMHeadModel
-        teacher = GPT2LMHeadModel.from_pretrained("gpt2")
+        from transformers import AutoModelForCausalLM
+        teacher_name = getattr(self.training_context, 'teacher_hf_model', None) or 'gpt2'
+        teacher = AutoModelForCausalLM.from_pretrained(teacher_name)
         teacher.eval()
         for p in teacher.parameters():
             p.requires_grad_(False)

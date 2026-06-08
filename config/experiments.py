@@ -130,24 +130,22 @@ class GPTTrainingContext(FlexTrainingContext):
 class FlexLMKDTrainingContext(GPTTrainingContext):
     kd_lambda: float = 0.5
     kd_temperature: float = 2.0
+    teacher_hf_model: str = 'gpt2'
 
     def __init__(self, kd_lambda=0.5, kd_temperature=2.0,
+                teacher_hf_model='gpt2',
                 dataset="wikitext-103-raw-v1",
                 max_seq_length=1024, batch_size=8,
                 num_levels_per_step=None, patience=5, epochs=20,
                 *args, **kwargs):
-        if dataset == "openwebtext":
-            loader = partial(utils.load_openwebtext,
-                            max_seq_length=max_seq_length, batch_size=batch_size,
-                            num_workers=16)
-        else:
-            loader = partial(utils.load_wikitext, dataset_name=dataset,
-                            max_seq_length=max_seq_length, batch_size=batch_size)
+        loader = partial(utils.load_wikitext, dataset_name=dataset,
+                        max_seq_length=max_seq_length, batch_size=batch_size)
         FlexTrainingContext.__init__(self, loader, patience=patience, epochs=epochs, *args, **kwargs)
         self.warmup_epochs = 2
         self.num_levels_per_step = num_levels_per_step
         self.kd_lambda = kd_lambda
         self.kd_temperature = kd_temperature
+        self.teacher_hf_model = teacher_hf_model
 
 
 class LLaMATrainingContext(GPTTrainingContext):
@@ -170,7 +168,32 @@ class LLaMATrainingContext(GPTTrainingContext):
         self.num_levels_per_step = num_levels_per_step
 
 
-torch.serialization.add_safe_globals([GPTTrainingContext, FlexLMKDTrainingContext, LLaMATrainingContext])
+@dataclasses.dataclass
+class LLaMAKDTrainingContext(FlexLMKDTrainingContext):
+    """KD training context for FlexLLaMA — uses FineWeb-Edu and llama-160m as teacher."""
+
+    def __init__(self, kd_lambda=1.0, kd_temperature=2.0,
+                 dataset="fineweb-edu", max_seq_length=1024, batch_size=8,
+                 num_levels_per_step=None, patience=3, epochs=10,
+                 max_examples=150_000, *args, **kwargs):
+        if dataset == "fineweb-edu":
+            loader = partial(utils.load_fineweb_edu,
+                             max_seq_length=max_seq_length,
+                             batch_size=batch_size,
+                             max_examples=max_examples)
+        else:
+            loader = partial(utils.load_wikitext, dataset_name=dataset,
+                             max_seq_length=max_seq_length,
+                             batch_size=batch_size)
+        FlexTrainingContext.__init__(self, loader, patience=patience, epochs=epochs, *args, **kwargs)
+        self.warmup_epochs = 2
+        self.num_levels_per_step = num_levels_per_step
+        self.kd_lambda = kd_lambda
+        self.kd_temperature = kd_temperature
+        self.teacher_hf_model = 'JackFram/llama-160m'
+
+
+torch.serialization.add_safe_globals([GPTTrainingContext, FlexLMKDTrainingContext, LLaMATrainingContext, LLaMAKDTrainingContext])
 
 
 CONFIGS = {
@@ -573,6 +596,28 @@ CONFIGS = {
                 wandb_project_name="FlexGPT_openwebtext_kd",
             ),
         ),
+        'wikitext103.kd_from_gpt2_lambda05': TrainerBuilder(
+            FlexLMKDTrainer,
+            FlexGPTConfig(
+                vocab_size=50257,
+                max_seq_length=1024,
+                num_layers=12,
+                hidden_dims=(384, 512, 768),
+                num_heads=(6, 8, 12),
+                mlp_dims=(1536, 2048, 3072),
+                dropout=0.1,
+                pretrained_hf_model="gpt2",
+            ),
+            FlexLMKDTrainingContext(
+                kd_lambda=0.5,
+                kd_temperature=2.0,
+                dataset="wikitext-103-raw-v1",
+                batch_size=8,
+                epochs=10,
+                patience=3,
+                wandb_project_name="FlexGPT_wikitext103_kd_lambda05",
+            ),
+        ),
     }, 'flexllama': {
         'fineweb.3levels': TrainerBuilder(
             FlexLMTrainer,
@@ -601,6 +646,32 @@ CONFIGS = {
                 epochs=1,
                 patience=1,
                 wandb_project_name="FlexLLaMA_fineweb_pretrained_tiny",
+            ),
+        ),
+        'fineweb.kd_pure': TrainerBuilder(
+            FlexLMKDTrainer,
+            FlexLLaMAConfig(
+                pretrained_hf_model="JackFram/llama-160m",
+            ),
+            LLaMAKDTrainingContext(
+                kd_lambda=1.0,
+                kd_temperature=2.0,
+                epochs=5,
+                patience=3,
+                wandb_project_name="FlexLLaMA_fineweb_kd_pure",
+            ),
+        ),
+        'fineweb.kd_lambda05': TrainerBuilder(
+            FlexLMKDTrainer,
+            FlexLLaMAConfig(
+                pretrained_hf_model="JackFram/llama-160m",
+            ),
+            LLaMAKDTrainingContext(
+                kd_lambda=0.5,
+                kd_temperature=2.0,
+                epochs=10,
+                patience=3,
+                wandb_project_name="FlexLLaMA_fineweb_kd_lambda05",
             ),
         ),
     }, 'flexdeit_v3_lowFLOPS': TrainerBuilder(
